@@ -1,5 +1,5 @@
 /* --------------------------------------------------------------
-   Rickshaw Runner – fully working with animated sprite sheet
+   Rickshaw Runner – NO LOADING BLOCK – works even with missing assets
    -------------------------------------------------------------- */
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -20,7 +20,7 @@ const assets = {
   pothole: new Image(),
   taka: new Image(),
   bg: new Image(),
-  bell: new Audio('assets/bell.mp3')   // audio – no onload
+  bell: new Audio('assets/bell.mp3')
 };
 
 assets.rickshawSheet.src = 'assets/rickshaw-spritesheet.png';
@@ -29,28 +29,40 @@ assets.pothole.src      = 'assets/pothole.png';
 assets.taka.src         = 'assets/taka.png';
 assets.bg.src           = 'assets/bg.jpg';
 
-/* ---------- Asset loading counter (images only) ---------- */
-const imageKeys = ['rickshawSheet', 'bus', 'pothole', 'taka', 'bg'];
-let loadedImages = 0;
-const totalImages = imageKeys.length;
+/* ---------- Critical assets (must load) ---------- */
+const critical = ['rickshawSheet', 'bg'];
+let criticalLoaded = 0;
 
-function imageLoaded() {
-  loadedImages++;
-  if (loadedImages === totalImages) startButtonEnabled();
+critical.forEach(key => {
+  assets[key].onload = () => {
+    criticalLoaded++;
+    if (criticalLoaded === critical.length) hideLoader();
+  };
+});
+
+/* ---------- Loading overlay ---------- */
+const loader = document.createElement('div');
+loader.id = 'loader';
+loader.style.cssText = `
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  background: rgba(0,100,0,0.9); color: white; padding: 15px 30px;
+  border-radius: 12px; font-weight: bold; font-size: 1.2em; z-index: 100;
+  box-shadow: 0 0 20px rgba(0,0,0,0.3);
+`;
+loader.textContent = 'Loading…';
+document.body.appendChild(loader);
+
+/* Hide loader when critical assets are ready */
+function hideLoader() {
+  loader.style.transition = 'opacity 0.5s';
+  loader.style.opacity = '0';
+  setTimeout(() => loader.remove(), 600);
 }
-imageKeys.forEach(k => assets[k].onload = imageLoaded);
 
-/* Fallback – start after 2 s even if something is broken */
-setTimeout(() => {
-  if (loadedImages < totalImages) startButtonEnabled();
-}, 2000);
+/* Fallback: hide loader after 3 seconds even if assets fail */
+setTimeout(hideLoader, 3000);
 
-function startButtonEnabled() {
-  document.getElementById('startBtn').disabled = false;
-  document.getElementById('startBtn').textContent = 'Start Game';
-}
-
-/* ---------- Player (animated sprite) ---------- */
+/* ---------- Player ---------- */
 const player = {
   x: 50,
   y: canvas.height - 120,
@@ -59,9 +71,9 @@ const player = {
   jumping: false,
   velocityY: 0,
   frame: 0,
-  frameCount: 8,          // first 8 frames = run cycle
+  frameCount: 8,
   frameTime: 0,
-  animSpeed: 5            // frames per tick
+  animSpeed: 5
 };
 
 /* ---------- Game objects ---------- */
@@ -79,20 +91,15 @@ function jump() {
   if (!player.jumping && gameRunning) {
     player.jumping = true;
     player.velocityY = -15;
-    player.frame = 0;                 // reset animation on jump
+    player.frame = 0;
     assets.bell.currentTime = 0;
     assets.bell.play().catch(() => {});
   }
 }
 
-/* ---------- Game start ---------- */
+/* ---------- Start game (no blocking) ---------- */
 function startGame() {
-  if (loadedImages < totalImages) {
-    alert('Assets still loading – try again in a second.');
-    return;
-  }
-
-  // reset everything
+  // Reset
   score = 0;
   obstacles = [];
   coins = [];
@@ -118,13 +125,18 @@ function gameLoop() {
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  /* ---- background scroll ---- */
-  bgOffset -= 4;
-  if (bgOffset <= -canvas.width) bgOffset = 0;
-  ctx.drawImage(assets.bg, bgOffset, 0, canvas.width, canvas.height);
-  ctx.drawImage(assets.bg, bgOffset + canvas.width, 0, canvas.width, canvas.height);
+  // Background (fallback to sky blue if missing)
+  if (assets.bg.complete && assets.bg.naturalWidth > 0) {
+    bgOffset -= 4;
+    if (bgOffset <= -canvas.width) bgOffset = 0;
+    ctx.drawImage(assets.bg, bgOffset, 0, canvas.width, canvas.height);
+    ctx.drawImage(assets.bg, bgOffset + canvas.width, 0, canvas.width, canvas.height);
+  } else {
+    ctx.fillStyle = '#87CEEB';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
 
-  /* ---- player physics ---- */
+  // Player physics
   if (player.jumping) {
     player.velocityY += 0.8;
     player.y += player.velocityY;
@@ -135,7 +147,7 @@ function gameLoop() {
     }
   }
 
-  /* ---- animate sprite ---- */
+  // Animate
   player.frameTime++;
   if (player.frameTime >= player.animSpeed) {
     player.frame = (player.frame + 1) % player.frameCount;
@@ -143,7 +155,7 @@ function gameLoop() {
   }
   drawPlayer();
 
-  /* ---- spawn obstacles ---- */
+  // Spawn
   if (Math.random() < 0.02) {
     obstacles.push({
       x: canvas.width,
@@ -153,8 +165,6 @@ function gameLoop() {
       type: Math.random() < 0.6 ? 'bus' : 'pothole'
     });
   }
-
-  /* ---- spawn coins ---- */
   if (Math.random() < 0.015) {
     coins.push({
       x: canvas.width,
@@ -164,29 +174,38 @@ function gameLoop() {
     });
   }
 
-  /* ---- update & draw obstacles ---- */
+  // Obstacles
   obstacles = obstacles.filter(obs => {
     obs.x -= 6;
     const img = obs.type === 'bus' ? assets.bus : assets.pothole;
-    ctx.drawImage(img, obs.x, obs.y, obs.width, obs.height);
+    if (img.complete) {
+      ctx.drawImage(img, obs.x, obs.y, obs.width, obs.height);
+    } else {
+      ctx.fillStyle = '#555';
+      ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+    }
 
-    // collision
     if (
       player.x + player.width > obs.x &&
       player.x < obs.x + obs.width &&
       player.y + player.height > obs.y
-    ) {
-      endGame();
-    }
+    ) endGame();
+
     return obs.x > -100;
   });
 
-  /* ---- update & draw coins ---- */
+  // Coins
   coins = coins.filter(coin => {
     coin.x -= 5;
-    ctx.drawImage(assets.taka, coin.x, coin.y, coin.width, coin.height);
+    if (assets.taka.complete) {
+      ctx.drawImage(assets.taka, coin.x, coin.y, coin.width, coin.height);
+    } else {
+      ctx.fillStyle = '#FFD700';
+      ctx.beginPath();
+      ctx.arc(coin.x + 15, coin.y + 15, 15, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
-    // collect
     if (
       player.x + player.width > coin.x &&
       player.x < coin.x + coin.width &&
@@ -203,20 +222,23 @@ function gameLoop() {
   animationId = requestAnimationFrame(gameLoop);
 }
 
-/* ---------- Draw animated player ---------- */
+/* ---------- Draw player (fallback if sprite missing) ---------- */
 function drawPlayer() {
-  const fw = 48, fh = 64;
-  const sx = (player.frame % 4) * fw;          // 4 columns
-  const sy = Math.floor(player.frame / 4) * fh; // rows
-
-  ctx.drawImage(
-    assets.rickshawSheet,
-    sx, sy, fw, fh,
-    player.x, player.y, player.width, player.height
-  );
+  if (assets.rickshawSheet.complete && assets.rickshawSheet.naturalWidth > 0) {
+    const fw = 48, fh = 64;
+    const sx = (player.frame % 4) * fw;
+    const sy = Math.floor(player.frame / 4) * fh;
+    ctx.drawImage(assets.rickshawSheet, sx, sy, fw, fh, player.x, player.y, player.width, player.height);
+  } else {
+    // Fallback: red rectangle with face
+    ctx.fillStyle = '#C00';
+    ctx.fillRect(player.x, player.y, player.width, player.height);
+    ctx.fillStyle = '#000';
+    ctx.fillText('Rickshaw', player.x + 2, player.y + 30);
+  }
 }
 
-/* ---------- UI helpers ---------- */
+/* ---------- UI ---------- */
 function updateScore() {
   document.getElementById('scoreValue').textContent = score;
 }
@@ -228,6 +250,5 @@ function endGame() {
   document.getElementById('score').classList.add('hidden');
 }
 
-/* ---------- Disable start button until ready ---------- */
-document.getElementById('startBtn').disabled = true;
-document.getElementById('startBtn').textContent = 'Loading…';
+/* ---------- Start button always enabled ---------- */
+document.getElementById('startBtn').disabled = false;
