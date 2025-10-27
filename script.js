@@ -1,31 +1,56 @@
+/* --------------------------------------------------------------
+   Rickshaw Runner – fully working with animated sprite sheet
+   -------------------------------------------------------------- */
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
 canvas.width = 380;
 canvas.height = 500;
 
+/* ---------- Game state ---------- */
 let score = 0;
 let gameRunning = false;
 let animationId;
 let bgOffset = 0;
 
-// Load assets
+/* ---------- Assets ---------- */
 const assets = {
   rickshawSheet: new Image(),
   bus: new Image(),
   pothole: new Image(),
   taka: new Image(),
-  bell: new Audio('assets/bell.mp3'),
-  bg: new Image()
+  bg: new Image(),
+  bell: new Audio('assets/bell.mp3')   // audio – no onload
 };
 
 assets.rickshawSheet.src = 'assets/rickshaw-spritesheet.png';
-assets.bus.src = 'assets/bus.png';
-assets.pothole.src = 'assets/pothole.png';
-assets.taka.src = 'assets/taka.png';
-assets.bg.src = 'assets/bg.jpg';
+assets.bus.src          = 'assets/bus.png';
+assets.pothole.src      = 'assets/pothole.png';
+assets.taka.src         = 'assets/taka.png';
+assets.bg.src           = 'assets/bg.jpg';
 
-// Player with sprite animation
+/* ---------- Asset loading counter (images only) ---------- */
+const imageKeys = ['rickshawSheet', 'bus', 'pothole', 'taka', 'bg'];
+let loadedImages = 0;
+const totalImages = imageKeys.length;
+
+function imageLoaded() {
+  loadedImages++;
+  if (loadedImages === totalImages) startButtonEnabled();
+}
+imageKeys.forEach(k => assets[k].onload = imageLoaded);
+
+/* Fallback – start after 2 s even if something is broken */
+setTimeout(() => {
+  if (loadedImages < totalImages) startButtonEnabled();
+}, 2000);
+
+function startButtonEnabled() {
+  document.getElementById('startBtn').disabled = false;
+  document.getElementById('startBtn').textContent = 'Start Game';
+}
+
+/* ---------- Player (animated sprite) ---------- */
 const player = {
   x: 50,
   y: canvas.height - 120,
@@ -34,59 +59,40 @@ const player = {
   jumping: false,
   velocityY: 0,
   frame: 0,
-  frameCount: 8,   // Use first 8 frames for run cycle
+  frameCount: 8,          // first 8 frames = run cycle
   frameTime: 0,
-  animSpeed: 5     // Change frame every 5 ticks
+  animSpeed: 5            // frames per tick
 };
 
-// Game objects
+/* ---------- Game objects ---------- */
 let obstacles = [];
 let coins = [];
 
-// Wait for images to load
-let loadedAssets = 0;
-const totalAssets = 5;
-
-function assetLoaded() {
-  loadedAssets++;
-  if (loadedAssets === totalAssets) {
-    console.log('All assets loaded!');
-  }
-}
-
-Object.values(assets).forEach(asset => {
-  if (asset instanceof Image) {
-    asset.onload = assetLoaded;
-  }
-});
-
-// Start & Restart
+/* ---------- UI ---------- */
 document.getElementById('startBtn').addEventListener('click', startGame);
 document.getElementById('restartBtn').addEventListener('click', startGame);
 
-// Jump on click/touch
 canvas.addEventListener('click', jump);
-canvas.addEventListener('touchstart', (e) => {
-  e.preventDefault();
-  jump();
-});
+canvas.addEventListener('touchstart', e => { e.preventDefault(); jump(); });
 
 function jump() {
   if (!player.jumping && gameRunning) {
     player.jumping = true;
     player.velocityY = -15;
-    player.frame = 0; // Reset animation
+    player.frame = 0;                 // reset animation on jump
     assets.bell.currentTime = 0;
     assets.bell.play().catch(() => {});
   }
 }
 
+/* ---------- Game start ---------- */
 function startGame() {
-  if (loadedAssets < totalAssets) {
-    alert('Loading assets... Please wait!');
+  if (loadedImages < totalImages) {
+    alert('Assets still loading – try again in a second.');
     return;
   }
 
+  // reset everything
   score = 0;
   obstacles = [];
   coins = [];
@@ -106,19 +112,19 @@ function startGame() {
   requestAnimationFrame(gameLoop);
 }
 
+/* ---------- Main loop ---------- */
 function gameLoop() {
   if (!gameRunning) return;
 
-  // Clear canvas
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Scroll background
+  /* ---- background scroll ---- */
   bgOffset -= 4;
   if (bgOffset <= -canvas.width) bgOffset = 0;
   ctx.drawImage(assets.bg, bgOffset, 0, canvas.width, canvas.height);
   ctx.drawImage(assets.bg, bgOffset + canvas.width, 0, canvas.width, canvas.height);
 
-  // Player physics
+  /* ---- player physics ---- */
   if (player.jumping) {
     player.velocityY += 0.8;
     player.y += player.velocityY;
@@ -129,17 +135,15 @@ function gameLoop() {
     }
   }
 
-  // Update animation
+  /* ---- animate sprite ---- */
   player.frameTime++;
   if (player.frameTime >= player.animSpeed) {
     player.frame = (player.frame + 1) % player.frameCount;
     player.frameTime = 0;
   }
-
-  // Draw animated player
   drawPlayer();
 
-  // Spawn obstacles
+  /* ---- spawn obstacles ---- */
   if (Math.random() < 0.02) {
     obstacles.push({
       x: canvas.width,
@@ -150,7 +154,7 @@ function gameLoop() {
     });
   }
 
-  // Spawn coins
+  /* ---- spawn coins ---- */
   if (Math.random() < 0.015) {
     coins.push({
       x: canvas.width,
@@ -160,13 +164,13 @@ function gameLoop() {
     });
   }
 
-  // Update & draw obstacles
+  /* ---- update & draw obstacles ---- */
   obstacles = obstacles.filter(obs => {
     obs.x -= 6;
     const img = obs.type === 'bus' ? assets.bus : assets.pothole;
     ctx.drawImage(img, obs.x, obs.y, obs.width, obs.height);
 
-    // Collision
+    // collision
     if (
       player.x + player.width > obs.x &&
       player.x < obs.x + obs.width &&
@@ -174,16 +178,15 @@ function gameLoop() {
     ) {
       endGame();
     }
-
     return obs.x > -100;
   });
 
-  // Update & draw coins
+  /* ---- update & draw coins ---- */
   coins = coins.filter(coin => {
     coin.x -= 5;
     ctx.drawImage(assets.taka, coin.x, coin.y, coin.width, coin.height);
 
-    // Collect
+    // collect
     if (
       player.x + player.width > coin.x &&
       player.x < coin.x + coin.width &&
@@ -194,30 +197,29 @@ function gameLoop() {
       updateScore();
       return false;
     }
-
     return coin.x > -50;
   });
 
   animationId = requestAnimationFrame(gameLoop);
 }
 
+/* ---------- Draw animated player ---------- */
 function drawPlayer() {
-  const frameWidth = 48;
-  const frameHeight = 64;
-  const sourceX = (player.frame % 4) * frameWidth;  // 4 per row
-  const sourceY = Math.floor(player.frame / 4) * frameHeight;
+  const fw = 48, fh = 64;
+  const sx = (player.frame % 4) * fw;          // 4 columns
+  const sy = Math.floor(player.frame / 4) * fh; // rows
 
   ctx.drawImage(
     assets.rickshawSheet,
-    sourceX, sourceY, frameWidth, frameHeight,
+    sx, sy, fw, fh,
     player.x, player.y, player.width, player.height
   );
 }
 
+/* ---------- UI helpers ---------- */
 function updateScore() {
   document.getElementById('scoreValue').textContent = score;
 }
-
 function endGame() {
   gameRunning = false;
   cancelAnimationFrame(animationId);
@@ -225,3 +227,7 @@ function endGame() {
   document.getElementById('gameOver').classList.remove('hidden');
   document.getElementById('score').classList.add('hidden');
 }
+
+/* ---------- Disable start button until ready ---------- */
+document.getElementById('startBtn').disabled = true;
+document.getElementById('startBtn').textContent = 'Loading…';
